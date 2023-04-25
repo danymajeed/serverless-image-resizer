@@ -68,7 +68,7 @@ resources:
       Type: AWS::CloudFront::Distribution
       Properties:
         DistributionConfig:
-          PriceClass: PriceClass_100
+          PriceClass: PriceClass_All
           CacheBehaviors:
             - PathPattern: /*
               TargetOriginId: s3/${self:custom.bucketName}.s3.amazonaws.com
