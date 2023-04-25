@@ -1,0 +1,104 @@
+service: image-resizer
+useDotenv: true
+
+provider:
+  name: aws
+  runtime: nodejs14.x
+  region: us-east-1
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - s3:GetObject
+            - s3:PutObject
+          Resource: "arn:aws:s3:::${self:custom.bucketName}/*"
+
+plugins:
+  - serverless-offline
+  - serverless-webpack
+
+package:
+  individually: true
+
+functions:
+  viewerRequest:
+    handler: src/UriToS3Key/handler.handler
+    memorySize: 128
+    timeout: 5
+    events:
+      - cloudFront:
+          eventType: viewer-request
+          origin: s3://${self:custom.bucketName}.s3.amazonaws.com
+          isDefaultOrigin: true
+          pathPattern: /*
+
+  originResponse:
+    handler: src/GetOrCreateImage/handler.handler
+    memorySize: 128
+    timeout: 10
+    events:
+      - cloudFront:
+          eventType: origin-response
+          origin: s3://${self:custom.bucketName}.s3.amazonaws.com
+          isDefaultOrigin: true
+          pathPattern: /*
+
+resources:
+  Resources:
+    ImageBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:custom.bucketName}
+
+    ImageBucketPolicy:
+      Type: AWS::S3::BucketPolicy
+      Properties:
+        Bucket: !Ref ImageBucket
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Sid: PublicReadGetObject
+              Effect: Allow
+              Principal: "*"
+              Action: "s3:GetObject"
+              Resource: "arn:aws:s3:::${self:custom.bucketName}/*"
+
+    CloudFrontDistribution:
+      Type: AWS::CloudFront::Distribution
+      Properties:
+        DistributionConfig:
+          PriceClass: PriceClass_100
+          CacheBehaviors:
+            - PathPattern: /*
+              TargetOriginId: s3/${self:custom.bucketName}.s3.amazonaws.com
+              ViewerProtocolPolicy: redirect-to-https
+              AllowedMethods:
+                - GET
+                - HEAD
+                - OPTIONS
+              Compress: true
+              ForwardedValues:
+                QueryString: true
+                QueryStringCacheKeys:
+                  - w
+                  - h
+                Cookies:
+                  Forward: none
+                Headers:
+                  - Access-Control-Request-Method
+                  - Access-Control-Request-Headers
+                  - Origin
+              MinTTL: 100
+              CachePolicyId: null
+
+custom:
+  bucketName: ${env:S3_BUCKET_NAME}
+  webpack:
+    packager: "npm" # use npm as the package manager
+    webpackConfig: ./webpack.config.js # specify the path to your Webpack configuration file
+    includeModules: true # include node_modules in the deployment package
+    packagerOptions:
+      scripts:
+        - rm -rf node_modules/sharp
+        - npm install --production --arch=x64 --platform=linux # get sharp to work on Lambda
